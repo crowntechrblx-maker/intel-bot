@@ -101,7 +101,7 @@ client.once('ready', async () => {
 
   client.user.setPresence({
     status: 'online',
-    activities: [{ name: 'encrypted channels', type: 2 }], // 2 = Listening
+    activities: [{ name: 'Listening toencrypted channels', type: 2 }], // 2 = Listening
   });
 });
 
