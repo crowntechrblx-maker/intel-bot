@@ -35,7 +35,7 @@ function formatUptime(ms) {
 }
 
 function statusPage({ botTag, botReady, uptimeStr, guilds }) {
-  const dot   = botReady ? '#57f287' : '#ed4245';
+  const dot   = botReady ? '#3aff78' : '#ed4245';
   const label = botReady ? 'ONLINE' : 'OFFLINE';
   return `<!DOCTYPE html>
 <html lang="en">
