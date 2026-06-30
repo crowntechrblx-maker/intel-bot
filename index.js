@@ -1,8 +1,13 @@
 require('dotenv').config();
 const fs   = require('fs');
 const path = require('path');
+const http = require('http');
 const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { initBotSchema } = require('./db');
+
+// Render free tier requires a bound port
+const PORT = process.env.PORT || 3001;
+http.createServer((_, res) => res.end('OK')).listen(PORT);
 const reportCommand = require('./commands/report');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
