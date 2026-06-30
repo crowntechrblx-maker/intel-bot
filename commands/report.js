@@ -4,10 +4,10 @@ const {
   TextInputBuilder,
   TextInputStyle,
   ActionRowBuilder,
-  EmbedBuilder,
 } = require('discord.js');
 const { get, run } = require('../db');
 const { requireOperator } = require('../auth');
+const { base, COLORS } = require('../utils/embeds');
 
 const MODAL_ID = 'report_modal';
 
@@ -52,14 +52,12 @@ module.exports = {
       new ActionRowBuilder().addComponents(summaryInput),
     );
 
-    // Stash the operator so the modal handler can use it without re-querying
     interaction.client._pendingReportOps ??= new Map();
     interaction.client._pendingReportOps.set(interaction.user.id, op);
 
     await interaction.showModal(modal);
   },
 
-  // Called from index.js modalSubmit handler
   async handleModal(interaction) {
     await interaction.deferReply({ ephemeral: true });
 
@@ -67,7 +65,6 @@ module.exports = {
     interaction.client._pendingReportOps?.delete(interaction.user.id);
 
     if (!op) {
-      // Fallback: re-check auth
       const freshOp = await requireOperator(interaction);
       if (!freshOp) return;
     }
@@ -78,13 +75,15 @@ module.exports = {
 
     if (!['OCG', 'POI'].includes(rawType)) {
       return interaction.editReply({
-        content: `Invalid report type **${rawType}**. Must be \`OCG\` or \`POI\`.`,
+        embeds: [
+          base(COLORS.RED)
+            .setTitle('Invalid Report Type')
+            .setDescription(`**${rawType}** is not valid. Must be \`OCG\` or \`POI\`.`),
+        ],
       });
     }
 
     const caseOfficer = op?.username ?? interaction.user.tag;
-
-    // Try to resolve entity_id
     const entity = await get(
       `SELECT id FROM roblox_entities WHERE LOWER(username) = LOWER($1)`,
       [subjectName]
@@ -95,8 +94,7 @@ module.exports = {
     const insert = await run(
       `INSERT INTO interview_reports
          (report_type, reference, entity_id, subject_name, case_officer, summary)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id`,
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
       [rawType, reference, entity?.id ?? null, subjectName, caseOfficer, summary]
     );
 
@@ -106,19 +104,20 @@ module.exports = {
       [caseOfficer, subjectName, `Ref: ${reference}`]
     );
 
-    const embed = new EmbedBuilder()
-      .setColor(0x5865f2)
-      .setTitle('Report Submitted')
+    const typeColor = rawType === 'OCG' ? COLORS.RED : COLORS.BLUE;
+
+    const embed = base(typeColor)
+      .setAuthor({ name: 'MI5 Intel Portal — Field Report Submitted' })
+      .setTitle(`📄  Report Filed — ${rawType}`)
       .addFields(
-        { name: 'Reference',     value: reference,    inline: true },
-        { name: 'Type',          value: rawType,      inline: true },
-        { name: 'Subject',       value: subjectName,  inline: true },
-        { name: 'Case officer',  value: caseOfficer,  inline: true },
-        { name: 'Report ID',     value: String(insert.id), inline: true },
+        { name: '🔖  Reference',    value: `\`${reference}\``,   inline: true },
+        { name: '📋  Type',         value: rawType,               inline: true },
+        { name: '🆔  Report ID',    value: `\`${insert.id}\``,   inline: true },
+        { name: '🎯  Subject',      value: subjectName,           inline: true },
+        { name: '👤  Case Officer', value: caseOfficer,           inline: true },
       )
-      .addFields({ name: 'Summary', value: summary.slice(0, 1024) })
-      .setTimestamp()
-      .setFooter({ text: 'Full report available at HQ.' });
+      .addFields({ name: '📝  Summary', value: summary.slice(0, 1024) })
+      .setFooter({ text: 'MI5 Intel Portal — Full report available at HQ' });
 
     await interaction.editReply({ embeds: [embed] });
   },

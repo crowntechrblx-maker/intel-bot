@@ -1,6 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const { get, run } = require('../db');
 const { requireOperator } = require('../auth');
+const { base, COLORS, ts } = require('../utils/embeds');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -23,24 +24,25 @@ module.exports = {
 
     await interaction.deferReply({ ephemeral: true });
 
-    const sub = interaction.options.getSubcommand();
+    const sub             = interaction.options.getSubcommand();
     const discordUserId   = interaction.user.id;
     const discordUsername = interaction.user.tag;
 
     if (sub === 'start') {
-      // Check for an already-open shift
       const active = await get(
         `SELECT id, start_time FROM shift_logs
           WHERE discord_user_id = $1 AND end_time IS NULL
-          ORDER BY start_time DESC
-          LIMIT 1`,
+          ORDER BY start_time DESC LIMIT 1`,
         [discordUserId]
       );
 
       if (active) {
-        const ts = Math.floor(new Date(active.start_time).getTime() / 1000);
         return interaction.editReply({
-          content: `You already have an active shift that started <t:${ts}:R>. Use \`/shift end\` to close it first.`,
+          embeds: [
+            base(COLORS.YELLOW)
+              .setTitle('Already On Shift')
+              .setDescription(`You have an active shift that started ${ts(active.start_time)}.\nUse \`/shift end\` to close it first.`),
+          ],
         });
       }
 
@@ -48,21 +50,19 @@ module.exports = {
 
       const insert = await run(
         `INSERT INTO shift_logs (discord_user_id, discord_username, division, start_time)
-         VALUES ($1, $2, $3, NOW())
-         RETURNING id, start_time`,
+         VALUES ($1, $2, $3, NOW()) RETURNING id`,
         [discordUserId, discordUsername, division]
       );
 
-      const embed = new EmbedBuilder()
-        .setColor(0x57f287)
-        .setTitle('Shift Started')
+      const embed = base(COLORS.GREEN)
+        .setAuthor({ name: 'MI5 Intel Portal — Shift Management' })
+        .setTitle('🟢  Shift Started')
         .addFields(
-          { name: 'Operator',  value: discordUsername, inline: true },
-          { name: 'Division',  value: division ?? '—',  inline: true },
-          { name: 'Shift ID',  value: String(insert.id), inline: true },
+          { name: '👤  Operator', value: discordUsername,       inline: true },
+          { name: '🏢  Division', value: division ?? '—',       inline: true },
+          { name: '🆔  Shift ID', value: `\`${insert.id}\``,   inline: true },
         )
-        .setTimestamp()
-        .setFooter({ text: 'Use /shift end when you clock off.' });
+        .setFooter({ text: 'MI5 Intel Portal — Use /shift end when you clock off' });
 
       return interaction.editReply({ embeds: [embed] });
     }
@@ -71,44 +71,41 @@ module.exports = {
       const active = await get(
         `SELECT id, start_time, division FROM shift_logs
           WHERE discord_user_id = $1 AND end_time IS NULL
-          ORDER BY start_time DESC
-          LIMIT 1`,
+          ORDER BY start_time DESC LIMIT 1`,
         [discordUserId]
       );
 
       if (!active) {
         return interaction.editReply({
-          content: `You have no active shift. Use \`/shift start\` to begin one.`,
+          embeds: [
+            base(COLORS.GREY)
+              .setTitle('No Active Shift')
+              .setDescription(`You have no active shift. Use \`/shift start\` to begin one.`),
+          ],
         });
       }
 
-      const now       = new Date();
-      const startMs   = new Date(active.start_time).getTime();
-      const durationMinutes = Math.round((now.getTime() - startMs) / 60000);
+      const durationMinutes = Math.round((Date.now() - new Date(active.start_time).getTime()) / 60000);
 
       await run(
-        `UPDATE shift_logs
-            SET end_time = NOW(), duration_minutes = $1
-          WHERE id = $2`,
+        `UPDATE shift_logs SET end_time = NOW(), duration_minutes = $1 WHERE id = $2`,
         [durationMinutes, active.id]
       );
 
-      const hours   = Math.floor(durationMinutes / 60);
-      const minutes = durationMinutes % 60;
-      const durationStr = hours > 0
-        ? `${hours}h ${minutes}m`
-        : `${minutes}m`;
+      const h = Math.floor(durationMinutes / 60);
+      const m = durationMinutes % 60;
+      const durationStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
 
-      const embed = new EmbedBuilder()
-        .setColor(0xed4245)
-        .setTitle('Shift Ended')
+      const embed = base(COLORS.RED)
+        .setAuthor({ name: 'MI5 Intel Portal — Shift Management' })
+        .setTitle('🔴  Shift Ended')
         .addFields(
-          { name: 'Operator',  value: discordUsername,     inline: true },
-          { name: 'Division',  value: active.division ?? '—', inline: true },
-          { name: 'Duration',  value: durationStr,          inline: true },
-          { name: 'Shift ID',  value: String(active.id),   inline: true },
-        )
-        .setTimestamp();
+          { name: '👤  Operator', value: discordUsername,           inline: true },
+          { name: '🏢  Division', value: active.division ?? '—',   inline: true },
+          { name: '⏱️  Duration', value: `**${durationStr}**`,     inline: true },
+          { name: '🆔  Shift ID', value: `\`${active.id}\``,       inline: true },
+          { name: '🕐  Started',  value: ts(active.start_time),    inline: true },
+        );
 
       return interaction.editReply({ embeds: [embed] });
     }

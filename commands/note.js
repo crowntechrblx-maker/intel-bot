@@ -1,6 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const { get, run } = require('../db');
 const { requireOperator } = require('../auth');
+const { base, COLORS, ts } = require('../utils/embeds');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -31,13 +32,21 @@ module.exports = {
 
     if (!entity) {
       return interaction.editReply({
-        content: `No entity found for **${username}**. Use \`/flag\` to add them first.`,
+        embeds: [
+          base(COLORS.GREY)
+            .setTitle('Entity Not Found')
+            .setDescription(`No record for **${username}**. Use \`/flag\` to add them first.`),
+        ],
       });
     }
 
     if (entity.min_clearance > op.clearance_level) {
       return interaction.editReply({
-        content: `**Access Denied.** This record requires clearance level **${entity.min_clearance}**.`,
+        embeds: [
+          base(COLORS.RED)
+            .setTitle('Access Denied')
+            .setDescription(`This record requires clearance level **${entity.min_clearance}**.`),
+        ],
       });
     }
 
@@ -52,15 +61,14 @@ module.exports = {
       [op.username, username, note.slice(0, 500)]
     );
 
-    const embed = new EmbedBuilder()
-      .setColor(0x57f287)
-      .setTitle('Note Added')
+    const embed = base(COLORS.GREEN)
+      .setAuthor({ name: 'Intel Database — Case Note Added' })
+      .setTitle(`📝  Note filed on ${username}`)
       .addFields(
-        { name: 'Entity',  value: username,    inline: true },
-        { name: 'Author',  value: op.username, inline: true },
+        { name: '👤  Author', value: op.username, inline: true },
+        { name: '🆔  Entity DB ID', value: `\`${entity.id}\``, inline: true },
       )
-      .addFields({ name: 'Note', value: note.slice(0, 1024) })
-      .setTimestamp();
+      .addFields({ name: '📋  Note', value: note.slice(0, 1024) });
 
     await interaction.editReply({ embeds: [embed] });
   },

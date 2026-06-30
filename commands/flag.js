@@ -1,6 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const { get, run } = require('../db');
 const { requireOperator } = require('../auth');
+const { base, COLORS } = require('../utils/embeds');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -30,19 +31,27 @@ module.exports = {
     );
 
     if (existing) {
-      // Already exists — log to audit and note the operator
       await run(
         `INSERT INTO audit_logs (action, actor, target, target_type, details)
          VALUES ('FLAG_DUPLICATE', $1, $2, 'entity', $3)`,
-        [op.username, username, `Already exists (ID ${existing.id}, status: ${existing.status}). Reason: ${reason}`]
+        [op.username, username, `Already exists (ID ${existing.id}). Reason: ${reason}`]
       );
 
       return interaction.editReply({
-        content: `**${username}** is already in the database (ID \`${existing.id}\`, status: **${existing.status}**, severity: **${existing.severity}**).\nYour flag reason has been logged. Use \`/note\` to append details.`,
+        embeds: [
+          base(COLORS.YELLOW)
+            .setTitle('Already in Database')
+            .setDescription(`**${username}** already exists in the intel database.`)
+            .addFields(
+              { name: '🆔  DB ID',    value: `\`${existing.id}\``,  inline: true },
+              { name: '📊  Severity', value: existing.severity,      inline: true },
+              { name: '📋  Status',   value: existing.status,        inline: true },
+            )
+            .addFields({ name: '📝  Your flag reason (logged)', value: reason }),
+        ],
       });
     }
 
-    // Insert new entity — roblox_id unknown at flag time, use username as placeholder
     const insert = await run(
       `INSERT INTO roblox_entities
          (roblox_id, username, added_by, severity, status, category, notes)
@@ -62,18 +71,17 @@ module.exports = {
       [op.username, username, reason]
     );
 
-    const embed = new EmbedBuilder()
-      .setColor(0xf4a400)
-      .setTitle('Entity Flagged')
+    const embed = base(COLORS.ORANGE)
+      .setAuthor({ name: 'Intel Database — New Flag' })
+      .setTitle(`🚩  ${username} Flagged`)
       .addFields(
-        { name: 'Username',  value: username,      inline: true },
-        { name: 'Severity',  value: 'MEDIUM',      inline: true },
-        { name: 'Status',    value: 'ACTIVE',      inline: true },
-        { name: 'Flagged by', value: op.username,  inline: true },
-        { name: 'DB ID',     value: String(insert.id), inline: true },
+        { name: '🆔  DB ID',      value: `\`${insert.id}\``, inline: true },
+        { name: '📊  Severity',   value: 'MEDIUM',           inline: true },
+        { name: '📋  Status',     value: 'ACTIVE',           inline: true },
+        { name: '👤  Flagged by', value: op.username,        inline: true },
       )
-      .addFields({ name: 'Reason', value: reason })
-      .setFooter({ text: 'Portal operators can update severity and resolve the Roblox ID via HQ.' });
+      .addFields({ name: '📝  Reason', value: reason })
+      .setFooter({ text: 'MI5 Intel Portal — Update severity and resolve Roblox ID at HQ' });
 
     await interaction.editReply({ embeds: [embed] });
   },

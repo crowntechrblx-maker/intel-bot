@@ -1,13 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const { get, all } = require('../db');
 const { requireOperator } = require('../auth');
-
-const SEVERITY_COLOR = {
-  LOW: 0x00b0f4,
-  MEDIUM: 0xf4a400,
-  HIGH: 0xe04040,
-  CRITICAL: 0x8b0000,
-};
+const { base, COLORS, SEVERITY_EMOJI, STATUS_EMOJI, ts, tsDate } = require('../utils/embeds');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -27,73 +21,71 @@ module.exports = {
     const username = interaction.options.getString('username').trim();
 
     const entity = await get(
-      `SELECT e.*, au.username AS added_by_name
-         FROM roblox_entities e
-         LEFT JOIN admin_users au ON au.username = e.added_by
-        WHERE LOWER(e.username) = LOWER($1)
-        LIMIT 1`,
+      `SELECT * FROM roblox_entities WHERE LOWER(username) = LOWER($1) LIMIT 1`,
       [username]
     );
 
     if (!entity) {
       return interaction.editReply({
-        content: `No entity found for **${username}**. Use \`/flag\` to add them.`,
+        embeds: [
+          base(COLORS.GREY)
+            .setTitle('Entity Not Found')
+            .setDescription(`No record found for **${username}**.\nUse \`/flag\` to add them or \`/whois\` to look up their Roblox profile.`),
+        ],
       });
     }
 
     if (entity.min_clearance > op.clearance_level) {
       return interaction.editReply({
-        content: `**Access Denied.** This record requires clearance level **${entity.min_clearance}**.`,
+        embeds: [
+          base(COLORS.RED)
+            .setTitle('Access Denied')
+            .setDescription(`This record requires clearance level **${entity.min_clearance}**.\nYour current level: **${op.clearance_level}**.`),
+        ],
       });
     }
 
     const recentNotes = await all(
-      `SELECT note, author, created_at
-         FROM entity_notes
-        WHERE entity_id = $1
-        ORDER BY created_at DESC
-        LIMIT 3`,
+      `SELECT note, author, created_at FROM entity_notes
+        WHERE entity_id = $1 ORDER BY created_at DESC LIMIT 3`,
       [entity.id]
     );
 
-    const color = SEVERITY_COLOR[entity.severity] ?? 0x36393f;
-    const lastUpdated = entity.last_fetched
-      ? `<t:${Math.floor(new Date(entity.last_fetched).getTime() / 1000)}:R>`
-      : 'Never';
+    const sev   = SEVERITY_EMOJI[entity.severity]  ?? '❓';
+    const stat  = STATUS_EMOJI[entity.status]       ?? '❓';
+    const color = COLORS[entity.severity]           ?? COLORS.GREY;
 
-    const embed = new EmbedBuilder()
-      .setColor(color)
-      .setTitle(`Entity — ${entity.username}`)
+    const lastFetched = entity.last_fetched
+      ? ts(entity.last_fetched)
+      : '`Never`';
+
+    const embed = base(color)
+      .setAuthor({ name: 'Intel Database — Entity Record' })
+      .setTitle(entity.username + (entity.display_name && entity.display_name !== entity.username ? `  ·  ${entity.display_name}` : ''))
       .setURL(`https://www.roblox.com/users/${entity.roblox_id}/profile`)
       .setThumbnail(entity.avatar_url ?? null)
       .addFields(
-        { name: 'Severity',        value: entity.severity,  inline: true },
-        { name: 'Status',          value: entity.status,    inline: true },
-        { name: 'Category',        value: entity.category,  inline: true },
-        { name: 'Clearance req.',  value: String(entity.min_clearance), inline: true },
-        { name: 'Roblox ID',       value: entity.roblox_id, inline: true },
-        { name: 'Last fetched',    value: lastUpdated,       inline: true },
-        { name: 'Added by',        value: entity.added_by ?? 'Unknown', inline: true },
-        { name: 'Added',           value: `<t:${Math.floor(new Date(entity.added_at).getTime() / 1000)}:D>`, inline: true },
+        { name: `${sev}  Severity`,   value: `**${entity.severity}**`,  inline: true },
+        { name: `${stat}  Status`,    value: `**${entity.status}**`,    inline: true },
+        { name: '🗂️  Category',      value: entity.category,           inline: true },
+        { name: '🆔  Roblox ID',     value: `\`${entity.roblox_id}\``, inline: true },
+        { name: '🔐  Clearance req', value: `**${entity.min_clearance}**`, inline: true },
+        { name: '🔄  Last fetched',  value: lastFetched,                inline: true },
+        { name: '➕  Added by',      value: entity.added_by,           inline: true },
+        { name: '📅  Added',         value: tsDate(entity.added_at),   inline: true },
+        { name: '🆔  DB ID',         value: `\`${entity.id}\``,        inline: true },
       );
 
-    if (entity.display_name && entity.display_name !== entity.username) {
-      embed.setDescription(`Display name: **${entity.display_name}**`);
-    }
-
     if (entity.notes) {
-      embed.addFields({ name: 'Summary notes', value: entity.notes.slice(0, 1024) });
+      embed.addFields({ name: '📋  Summary', value: entity.notes.slice(0, 1024) });
     }
 
     if (recentNotes.length > 0) {
-      const notesText = recentNotes.map(n => {
-        const ts = Math.floor(new Date(n.created_at).getTime() / 1000);
-        return `<t:${ts}:d> **${n.author}**: ${n.note.slice(0, 120)}`;
-      }).join('\n');
-      embed.addFields({ name: 'Recent notes', value: notesText });
+      const notesText = recentNotes
+        .map(n => `${ts(n.created_at)}  **${n.author}**: ${n.note.slice(0, 120)}`)
+        .join('\n');
+      embed.addFields({ name: `📝  Recent Notes (${recentNotes.length})`, value: notesText });
     }
-
-    embed.setFooter({ text: `Intel Portal • ID ${entity.id}` });
 
     await interaction.editReply({ embeds: [embed] });
   },

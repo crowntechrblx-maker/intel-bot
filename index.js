@@ -98,6 +98,11 @@ client.once('ready', async () => {
   console.log(`[intel-bot] Logged in as ${client.user.tag}`);
   await initBotSchema();
   console.log('[intel-bot] DB schema ready');
+
+  client.user.setPresence({
+    status: 'online',
+    activities: [{ name: 'encrypted channels', type: 2 }], // 2 = Listening
+  });
 });
 
 client.on('interactionCreate', async interaction => {
