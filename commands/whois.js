@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { get } = require('../db');
+const { get, all } = require('../db');
 const { requireOperator } = require('../auth');
 const { quickProfile } = require('../utils/roblox');
 const { base, COLORS, SEVERITY_EMOJI, STATUS_EMOJI, ts, tsDate } = require('../utils/embeds');
@@ -21,12 +21,13 @@ module.exports = {
 
     const username = interaction.options.getString('username').trim();
 
-    const [profile, dbEntity] = await Promise.all([
+    const [profile, dbEntity, monitoredGroups] = await Promise.all([
       quickProfile(username),
       get(
         `SELECT id, severity, status, category, min_clearance FROM roblox_entities WHERE LOWER(username) = LOWER($1)`,
         [username]
       ),
+      all(`SELECT group_id, group_name FROM groups_of_interest`),
     ]);
 
     if (!profile) {
@@ -65,15 +66,32 @@ module.exports = {
       embed.addFields({ name: '📝  Bio', value: profile.description.slice(0, 300) });
     }
 
-    if (profile.groups.length > 0) {
-      const groupList = profile.groups
-        .slice(0, 5)
-        .map(g => `• **${g.group.name}** — ${g.role.name}`)
+    // Groups of Interest cross-reference
+    const monitoredIds = new Set(monitoredGroups.map(g => String(g.group_id)));
+    const goiMatches = profile.groups.filter(g => monitoredIds.has(String(g.group.id)));
+
+    if (goiMatches.length > 0) {
+      const goiList = goiMatches
+        .map(g => `⚠️ **${g.group.name}** — ${g.role.name}`)
         .join('\n');
       embed.addFields({
-        name: `🏘️  Groups (${profile.groups.length}${profile.groups.length > 5 ? ', showing 5' : ''})`,
-        value: groupList,
+        name: `🚨  Groups of Interest (${goiMatches.length} match${goiMatches.length !== 1 ? 'es' : ''})`,
+        value: goiList,
       });
+    }
+
+    if (profile.groups.length > 0) {
+      const nonGoi = profile.groups.filter(g => !monitoredIds.has(String(g.group.id)));
+      if (nonGoi.length > 0) {
+        const groupList = nonGoi
+          .slice(0, 5)
+          .map(g => `• **${g.group.name}** — ${g.role.name}`)
+          .join('\n');
+        embed.addFields({
+          name: `🏘️  Other Groups (${nonGoi.length}${nonGoi.length > 5 ? ', showing 5' : ''})`,
+          value: groupList,
+        });
+      }
     }
 
     // Intel DB cross-reference
